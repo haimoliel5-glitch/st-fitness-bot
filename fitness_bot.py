@@ -319,7 +319,7 @@ if prompt := st.chat_input(f"שאל את {TRAINER_NAME}... 💪"):
         payload = {
             "model": "gpt-4o-mini",
             "messages": st.session_state.messages,
-            "max_tokens": 800
+            "max_tokens": 300
         }
         r = requests.post(API_URL, json=payload, headers=HEADERS, timeout=30)
         data = r.json()
