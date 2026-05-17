@@ -7,7 +7,7 @@ import base64
 #  הגדרות
 # ============================================================
 API_URL       = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
-API_KEY       = "sk-std-m4kF_4n8sTvd3eeCguxeT3aARvJZYAp8tB-gkuBDPxA"
+API_KEY       = "sk-std-NYI6dMVcFMobVTH3T8hrp2s4CWCNwJDi04ZLmflNzQU"
 TRAINER_NAME  = "בן"
 TRAINER_PHONE = "0506682769"
 GYM_NAME      = "ST-FITNESS"
