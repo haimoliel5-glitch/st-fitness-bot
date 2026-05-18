@@ -6,18 +6,11 @@ import base64
 # ============================================================
 #  הגדרות
 # ============================================================
-
-API_URL = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
-API_KEY = "sk-std-NYI6dMVcFMobVTH3T8hrp2s4CWCNwJDi04ZLmflNzQU"
-
-TRAINER_NAME = "בן"
+API_URL       = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
+API_KEY       = "sk-std-NYI6dMVcFMobVTH3T8hrp2s4CWCNwJDi04ZLmflNzQU"
+TRAINER_NAME  = "בן"
 TRAINER_PHONE = "0506682769"
-GYM_NAME = "ST-FITNESS"
-
-MAX_HISTORY = 4
-
-# ============================================================
-#  HEADERS
+GYM_NAME      = "ST-FITNESS"
 # ============================================================
 
 HEADERS = {
@@ -25,392 +18,153 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# ============================================================
-#  SYSTEM PROMPT
-# ============================================================
+# System prompt קצר מאוד כדי לחסוך טוקנים
+SYSTEM_PROMPT = f"אתה בן, מאמן כושר של {GYM_NAME}. ענה בעברית, קצר (2 משפטים), עם אמוג'י 💪🔥."
 
-SYSTEM_PROMPT = f"""
-אתה בן — מאמן הכושר האגדי של {GYM_NAME}.
-
-הסגנון שלך:
-- תמיד פתח עם מחמאה או עידוד
-- השתמש באמוג'ים 💪🔥⚡🏆
-- ענה בעברית
-- מקסימום 3 משפטים
-- סיים במשפט מוטיבציה
-- אל תמציא מידע רפואי
-- אם רוצים לדבר עם המאמן תגיד ללחוץ על הכפתור למטה
-"""
-
-# ============================================================
-#  LOGO
-# ============================================================
-
-def get_logo_b64():
-
-    if os.path.exists("logo.jpg"):
-
-        with open("logo.jpg", "rb") as f:
-            return base64.b64encode(f.read()).decode()
-
-    return ""
-
-# ============================================================
-#  CLEAN HISTORY
-# ============================================================
-
-def trim_history(messages):
-
-    cleaned = []
-
-    for msg in messages:
-
-        if not isinstance(msg, dict):
-            continue
-
-        if "role" not in msg or "content" not in msg:
-            continue
-
-        content = msg["content"]
-
-        if not isinstance(content, str):
-            continue
-
-        if not content.strip():
-            continue
-
-        cleaned.append({
-            "role": msg["role"],
-            "content": content.strip()
-        })
-
-    system_msgs = [m for m in cleaned if m["role"] == "system"]
-    normal_msgs = [m for m in cleaned if m["role"] != "system"]
-
-    normal_msgs = normal_msgs[-MAX_HISTORY:]
-
-    return system_msgs + normal_msgs
-
-# ============================================================
-#  API CALL
-# ============================================================
-
-def call_api(messages, retries=3):
-
-    trimmed = trim_history(messages)
-
+def call_api_smart(messages):
+    """
+    פתרון לבעיית 'מפסיק אחרי 2-3 הודעות':
+    - ניסיון 1: שולח רק 3 הודעות אחרונות + system
+    - ניסיון 2: שולח רק את השאלה הנוכחית בלי היסטוריה
+    """
+    # ניסיון 1: עם היסטוריה מינימלית (3 הודעות אחרונות)
+    system = [m for m in messages if m["role"] == "system"]
+    others = [m for m in messages if m["role"] != "system"]
+    recent = system + others[-3:]  # רק 3 הודעות אחרונות!
+    
     payload = {
         "model": "gpt-4o-mini",
-        "messages": trimmed,
-        "temperature": 0.7,
-        "max_tokens": 250
+        "messages": recent,
+        "max_tokens": 250  # נמוך כדי שה-reasoning_tokens לא ייקח הכל
     }
+    
+    try:
+        r = requests.post(API_URL, json=payload, headers=HEADERS, timeout=90)
+        data = r.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if content and content.strip():
+            return content.strip()
+    except:
+        pass
+    
+    # ניסיון 2: בלי היסטוריה בכלל - רק השאלה הנוכחית
+    try:
+        simple_payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                messages[-1]  # רק ההודעה האחרונה
+            ],
+            "max_tokens": 150
+        }
+        r = requests.post(API_URL, json=simple_payload, headers=HEADERS, timeout=90)
+        data = r.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if content and content.strip():
+            return content.strip()
+    except:
+        pass
+    
+    return "אני עמוס כרגע, נסה שוב! 🙏"
 
-    for attempt in range(retries):
+# CSS ועיצוב
+logo_b64 = ""
+if os.path.exists("logo.jpg"):
+    with open("logo.jpg", "rb") as f:
+        logo_b64 = base64.b64encode(f.read()).decode()
 
-        try:
+st.set_page_config(page_title=GYM_NAME, page_icon="💪", layout="centered")
 
-            r = requests.post(
-                API_URL,
-                json=payload,
-                headers=HEADERS,
-                timeout=45
-            )
-
-            print("\n===================")
-            print("STATUS:", r.status_code)
-            print("TEXT:", r.text)
-            print("===================\n")
-
-            if r.status_code != 200:
-                return f"⚠️ שגיאת שרת ({r.status_code})"
-
-            try:
-                data = r.json()
-            except:
-                return "⚠️ השרת החזיר תשובה לא תקינה"
-
-            if (
-                isinstance(data, dict)
-                and "choices" in data
-                and len(data["choices"]) > 0
-            ):
-
-                choice = data["choices"][0]
-
-                if (
-                    "message" in choice
-                    and isinstance(choice["message"], dict)
-                ):
-
-                    content = choice["message"].get("content", "")
-
-                    if (
-                        isinstance(content, str)
-                        and content.strip()
-                    ):
-
-                        return content.strip()
-
-            # fallback אם המודל מחזיר ריק
-            last_user = None
-
-            for msg in reversed(trimmed):
-
-                if msg["role"] == "user":
-                    last_user = msg
-                    break
-
-            if last_user:
-
-                payload["messages"] = [
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT
-                    },
-                    last_user
-                ]
-
-        except requests.exceptions.Timeout:
-
-            if attempt == retries - 1:
-                return "⏱️ השרת עמוס כרגע, נסה שוב בעוד רגע"
-
-        except Exception as e:
-
-            print("ERROR:", str(e))
-
-            if attempt == retries - 1:
-                return f"❌ שגיאה: {str(e)}"
-
-    return "🙏 לא הצלחתי לענות כרגע"
-
-# ============================================================
-#  PAGE
-# ============================================================
-
-logo_b64 = get_logo_b64()
-
-st.set_page_config(
-    page_title=f"{GYM_NAME} | בוט כושר",
-    page_icon="💪",
-    layout="centered"
-)
-
-# ============================================================
-#  CSS
-# ============================================================
-
-bg_css = ""
-
-if logo_b64:
-
-    bg_css = f"""
-    .stApp {{
-        background-color: #111111;
-        background-image: url("data:image/jpeg;base64,{logo_b64}");
-        background-repeat: no-repeat;
-        background-position: center center;
-        background-size: 50%;
-        background-attachment: fixed;
-    }}
-    """
+bg = f'background-image: url("data:image/jpeg;base64,{logo_b64}"); background-size: 50%; background-position: center; background-repeat: no-repeat; background-attachment: fixed;' if logo_b64 else ''
 
 st.markdown(f"""
 <style>
-
-body {{
-    direction: rtl;
-}}
-
-#MainMenu,
-footer,
-header {{
-    visibility: hidden;
-}}
-
-{bg_css}
-
-.stApp::before {{
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.85);
-    z-index: 0;
-    pointer-events: none;
-}}
-
-.block-container {{
-    position: relative;
-    z-index: 1;
-    padding: 0 1rem 5rem 1rem !important;
-}}
-
-.chat-wrap {{
-    background: rgba(236,229,221,0.95);
-    border-radius: 12px;
-    padding: 10px;
-}}
-
-.msg-user {{
-    background: #DCF8C6;
-    padding: 10px;
-    border-radius: 12px;
-    margin: 8px 0 8px auto;
-    max-width: 80%;
-    width: fit-content;
-    text-align: right;
-}}
-
-.msg-bot {{
-    background: white;
-    padding: 10px;
-    border-radius: 12px;
-    margin: 8px auto 8px 0;
-    max-width: 80%;
-    width: fit-content;
-    text-align: right;
-    border-right: 3px solid #c0392b;
-}}
-
-.msg-wrapper-user {{
-    display: flex;
-    justify-content: flex-end;
-}}
-
-.msg-wrapper-bot {{
-    display: flex;
-    justify-content: flex-start;
-}}
-
-.thinking-box {{
-    background: white;
-    padding: 10px 15px;
-    border-radius: 12px;
-    border-right: 3px solid #c0392b;
-}}
-
+    body {{ direction: rtl; }}
+    #MainMenu, footer, header {{ visibility: hidden; }}
+    .stApp {{ background: #111; {bg} }}
+    .stApp::before {{ content: ""; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 0; pointer-events: none; }}
+    .block-container {{ position: relative; z-index: 1; padding: 0 1rem 5rem !important; max-width: 100% !important; }}
+    
+    .wa-header {{ background: rgba(20,20,20,0.97); color: white; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin: -1rem -1rem 1rem; border-bottom: 3px solid #c0392b; z-index: 10; }}
+    .wa-name {{ font-weight: bold; font-size: 16px; }}
+    .wa-status {{ font-size: 12px; color: #e74c3c; }}
+    
+    .chat-wrap {{ background: rgba(236,229,221,0.95); border-radius: 12px; padding: 10px; margin-bottom: 10px; }}
+    .msg-user {{ background: #DCF8C6; padding: 8px 12px; border-radius: 12px 2px 12px 12px; margin: 6px 0 6px auto; max-width: 80%; width: fit-content; text-align: right; font-size: 14px; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }}
+    .msg-bot {{ background: white; padding: 8px 12px; border-radius: 2px 12px 12px 12px; margin: 6px auto 6px 0; max-width: 80%; width: fit-content; text-align: right; font-size: 14px; line-height: 1.6; border-right: 3px solid #c0392b; word-break: break-word; white-space: pre-wrap; }}
+    .msg-time {{ font-size: 11px; color: #999; margin-top: 3px; }}
+    .msg-wrapper-user {{ display: flex; justify-content: flex-end; width: 100%; }}
+    .msg-wrapper-bot {{ display: flex; justify-content: flex-start; width: 100%; }}
+    
+    .thinking {{ background: white; padding: 10px 16px; margin: 6px auto 6px 0; width: fit-content; border-radius: 2px 12px 12px 12px; border-right: 3px solid #c0392b; font-weight: bold; color: #c0392b; animation: pulse 1s infinite; }}
+    @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.4; }} }}
+    
+    .stButton > button {{ background: transparent !important; color: #888 !important; border: 1px solid #555 !important; border-radius: 20px !important; padding: 6px 16px !important; font-size: 12px !important; width: 100% !important; }}
+    .stButton > button:hover {{ color: #c0392b !important; border-color: #c0392b !important; }}
+    
+    section[data-testid="stSidebar"] {{ background: rgba(15,15,15,0.97) !important; }}
+    section[data-testid="stSidebar"] * {{ color: white !important; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================
-#  HEADER
-# ============================================================
+# כותרת
+avatar = f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:42px;height:42px;border-radius:50%;border:2px solid #c0392b;">' if logo_b64 else "💪"
+st.markdown(f'<div class="wa-header">{avatar}<div><span class="wa-name">{GYM_NAME}</span><span class="wa-status">⚡ בוט כושר חכם</span></div></div>', unsafe_allow_html=True)
 
-st.markdown(f"""
-<h2 style='text-align:center;color:white;'>
-💪 {GYM_NAME}
-</h2>
-""", unsafe_allow_html=True)
-
-# ============================================================
-#  SESSION
-# ============================================================
-
+# אתחול
 if "messages" not in st.session_state:
-
     st.session_state.messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT
-        },
-        {
-            "role": "assistant",
-            "content": f"היי 👋 ברוך הבא ל-{GYM_NAME}! איך אפשר לעזור לך היום? 💪"
-        }
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "assistant", "content": f"היי! 👋 ברוך הבא ל-{GYM_NAME}! 🔥\nשאל אותי הכל על כושר ותזונה! 💪"}
     ]
+    st.session_state.transferred = False
 
-# ============================================================
-#  CHAT DISPLAY
-# ============================================================
-
+# הצגת הודעות
 st.markdown('<div class="chat-wrap">', unsafe_allow_html=True)
-
 for msg in st.session_state.messages:
-
     if msg["role"] == "system":
         continue
-
-    content = msg["content"]
-
+    c = msg["content"]
     if msg["role"] == "user":
-
-        st.markdown(
-            f'<div class="msg-wrapper-user"><div class="msg-user">{content}</div></div>',
-            unsafe_allow_html=True
-        )
-
+        st.markdown(f'<div class="msg-wrapper-user"><div class="msg-user">{c}<div class="msg-time">✓✓</div></div></div>', unsafe_allow_html=True)
     else:
-
-        st.markdown(
-            f'<div class="msg-wrapper-bot"><div class="msg-bot">{content}</div></div>',
-            unsafe_allow_html=True
-        )
-
+        st.markdown(f'<div class="msg-wrapper-bot"><div class="msg-bot">{c}<div class="msg-time">💪 {TRAINER_NAME}</div></div></div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ============================================================
-#  CHAT INPUT
-# ============================================================
+# כפתור מאמן
+if not st.session_state.transferred:
+    if st.button(f"דבר ישירות עם {TRAINER_NAME} 💬"):
+        st.session_state.transferred = True
+        wa = f"https://wa.me/972{TRAINER_PHONE[1:]}?text=היי+{TRAINER_NAME},+אני+מתאמן+ב{GYM_NAME}"
+        st.session_state.messages.append({"role": "assistant", "content": f'בוודאי! <a href="{wa}" target="_blank" style="color:#c0392b;font-weight:bold;">💬 לחץ כאן</a>'})
+        st.rerun()
 
-if prompt := st.chat_input(f"שאל את {TRAINER_NAME} 💪"):
-
-    st.session_state.messages.append({
-        "role": "user",
-        "content": prompt
-    })
-
-    thinking = st.empty()
-
-    thinking.markdown(
-        '<div class="msg-wrapper-bot"><div class="thinking-box">🔥 בן חושב...</div></div>',
-        unsafe_allow_html=True
-    )
-
-    reply = call_api(st.session_state.messages)
-
-    thinking.empty()
-
-    if reply and reply.strip():
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": reply.strip()
-        })
-
-    else:
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": "🙏 לא הצלחתי לענות, נסה שוב"
-        })
-
+# קלט
+if prompt := st.chat_input(f"שאל את {TRAINER_NAME}... 💪"):
+    st.session_state.transferred = False
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    think = st.empty()
+    think.markdown('<div class="msg-wrapper-bot"><div class="thinking">🔥 בן חושב...</div></div>', unsafe_allow_html=True)
+    
+    reply = call_api_smart(st.session_state.messages)
+    
+    think.empty()
+    st.session_state.messages.append({"role": "assistant", "content": reply})
     st.rerun()
 
-# ============================================================
-#  SIDEBAR
-# ============================================================
-
+# סיידבר
 with st.sidebar:
-
-    st.markdown(f"## {GYM_NAME}")
-
+    if logo_b64:
+        st.image("logo.jpg", use_container_width=True)
+    st.markdown(f"### {GYM_NAME}")
     st.markdown("💪 STRENGTH › FOCUS › RESULTS")
-
     st.markdown(f"📞 {TRAINER_NAME}: {TRAINER_PHONE}")
-
     st.divider()
-
     if st.button("🗑 שיחה חדשה"):
-
         st.session_state.messages = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            }
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "assistant", "content": f"היי! 👋 ברוך הבא ל-{GYM_NAME}! 🔥\nשאל אותי הכל! 💪"}
         ]
-
+        st.session_state.transferred = False
         st.rerun()
