@@ -18,56 +18,53 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# System prompt קצר מאוד כדי לחסוך טוקנים
-SYSTEM_PROMPT = f"אתה בן, מאמן כושר של {GYM_NAME}. ענה בעברית, קצר (2 משפטים), עם אמוג'י 💪🔥."
+SYSTEM_PROMPT = f"אתה בן, מאמן כושר של {GYM_NAME}. ענה בעברית, קצר, עם אמוג'י 💪🔥."
 
 def call_api_smart(messages):
     """
-    פתרון לבעיית 'מפסיק אחרי 2-3 הודעות':
-    - ניסיון 1: שולח רק 3 הודעות אחרונות + system
-    - ניסיון 2: שולח רק את השאלה הנוכחית בלי היסטוריה
+    פתרון לבעיית reasoning_tokens:
+    השרת משתמש ב-reasoning tokens שאוכלים את ה-max_tokens.
+    הפתרון: max_tokens גבוה (4000) + היסטוריה מינימלית (3 הודעות)
     """
-    # ניסיון 1: עם היסטוריה מינימלית (3 הודעות אחרונות)
+    # שמירת היסטוריה מינימלית
     system = [m for m in messages if m["role"] == "system"]
     others = [m for m in messages if m["role"] != "system"]
-    recent = system + others[-3:]  # רק 3 הודעות אחרונות!
+    recent = system + others[-3:]
     
+    # ניסיון 1: עם היסטוריה
     payload = {
         "model": "gpt-4o-mini",
         "messages": recent,
-        "max_tokens": 250  # נמוך כדי שה-reasoning_tokens לא ייקח הכל
+        "max_tokens": 4000
     }
     
     try:
         r = requests.post(API_URL, json=payload, headers=HEADERS, timeout=90)
         data = r.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if content and content.strip():
-            return content.strip()
-    except:
-        pass
+        if "choices" in data:
+            content = data["choices"][0]["message"].get("content", "")
+            if content and content.strip():
+                return content.strip()
+    except Exception as e:
+        return f"שגיאה: {str(e)[:100]}"
     
-    # ניסיון 2: בלי היסטוריה בכלל - רק השאלה הנוכחית
+    # ניסיון 2: רק השאלה האחרונה
     try:
-        simple_payload = {
-            "model": "gpt-4o-mini",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                messages[-1]  # רק ההודעה האחרונה
-            ],
-            "max_tokens": 150
-        }
-        r = requests.post(API_URL, json=simple_payload, headers=HEADERS, timeout=90)
+        payload["messages"] = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            messages[-1]
+        ]
+        r = requests.post(API_URL, json=payload, headers=HEADERS, timeout=90)
         data = r.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if content and content.strip():
-            return content.strip()
-    except:
-        pass
+        if "choices" in data:
+            content = data["choices"][0]["message"].get("content", "")
+            if content and content.strip():
+                return content.strip()
+    except Exception as e:
+        return f"שגיאה: {str(e)[:100]}"
     
-    return "אני עמוס כרגע, נסה שוב! 🙏"
+    return "נסה לנסח את השאלה אחרת 🙏"
 
-# CSS ועיצוב
 logo_b64 = ""
 if os.path.exists("logo.jpg"):
     with open("logo.jpg", "rb") as f:
@@ -107,11 +104,9 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# כותרת
 avatar = f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:42px;height:42px;border-radius:50%;border:2px solid #c0392b;">' if logo_b64 else "💪"
 st.markdown(f'<div class="wa-header">{avatar}<div><span class="wa-name">{GYM_NAME}</span><span class="wa-status">⚡ בוט כושר חכם</span></div></div>', unsafe_allow_html=True)
 
-# אתחול
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -119,7 +114,6 @@ if "messages" not in st.session_state:
     ]
     st.session_state.transferred = False
 
-# הצגת הודעות
 st.markdown('<div class="chat-wrap">', unsafe_allow_html=True)
 for msg in st.session_state.messages:
     if msg["role"] == "system":
@@ -131,7 +125,6 @@ for msg in st.session_state.messages:
         st.markdown(f'<div class="msg-wrapper-bot"><div class="msg-bot">{c}<div class="msg-time">💪 {TRAINER_NAME}</div></div></div>', unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# כפתור מאמן
 if not st.session_state.transferred:
     if st.button(f"דבר ישירות עם {TRAINER_NAME} 💬"):
         st.session_state.transferred = True
@@ -139,7 +132,6 @@ if not st.session_state.transferred:
         st.session_state.messages.append({"role": "assistant", "content": f'בוודאי! <a href="{wa}" target="_blank" style="color:#c0392b;font-weight:bold;">💬 לחץ כאן</a>'})
         st.rerun()
 
-# קלט
 if prompt := st.chat_input(f"שאל את {TRAINER_NAME}... 💪"):
     st.session_state.transferred = False
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -153,7 +145,6 @@ if prompt := st.chat_input(f"שאל את {TRAINER_NAME}... 💪"):
     st.session_state.messages.append({"role": "assistant", "content": reply})
     st.rerun()
 
-# סיידבר
 with st.sidebar:
     if logo_b64:
         st.image("logo.jpg", use_container_width=True)
