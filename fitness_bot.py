@@ -9,7 +9,7 @@ from datetime import datetime
 # ============================================================
 API_URL       = "https://server.iac.ac.il/api/v1/studentapi/chat/completions"
 API_KEY       = "sk-std-NYI6dMVcFMobVTH3T8hrp2s4CWCNwJDi04ZLmflNzQU"
-SUPPORT_PHONE = "0506682769"  # פנימי בלבד
+SUPPORT_PHONE = "0527007042"  # פנימי בלבד
 COMPANY_NAME  = "WSC Sports"
 # ============================================================
 
